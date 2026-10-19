@@ -1,22 +1,5 @@
 {
-    "members": [
-        {
-            "id": 1,
-            "name": "Rahul Sharma",
-            "phone": "9876543210",
-            "email": "rahul@example.com",
-            "address": "Andheri West, Mumbai",
-            "plan": "Gold (12 Months)",
-            "scheme": "12+1 Free",
-            "amount": 15000,
-            "dues": 2000,
-            "pt_trainer": "Amit (Trainer)",
-            "pt_amount": 5000,
-            "status": "Active",
-            "start_date": "2026-01-01",
-            "end_date": "2027-01-01"
-        }
-    ],
+    "members": [],
     "leads": [],
     "staff": [
         {
