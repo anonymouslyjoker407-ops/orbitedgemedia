@@ -1,0 +1,54 @@
+{
+    "members": [
+        {
+            "id": 1,
+            "name": "Rahul Sharma",
+            "phone": "9876543210",
+            "email": "rahul@example.com",
+            "address": "Andheri West, Mumbai",
+            "plan": "Gold (12 Months)",
+            "scheme": "12+1 Free",
+            "amount": 15000,
+            "dues": 2000,
+            "pt_trainer": "Amit (Trainer)",
+            "pt_amount": 5000,
+            "status": "Active",
+            "start_date": "2026-01-01",
+            "end_date": "2027-01-01"
+        }
+    ],
+    "leads": [
+        {
+            "id": 1,
+            "name": "Vikas Verma",
+            "phone": "9123456789",
+            "email": "vikas@example.com",
+            "source": "Instagram Ad",
+            "status": "Trial (3-Day)",
+            "follow_up_date": "2026-09-10"
+        }
+    ],
+    "staff": [
+        {
+            "id": 1,
+            "name": "Amit",
+            "role": "Trainer",
+            "phone": "9876543210",
+            "email": "amit@gym.com",
+            "address": "Main Street, Gym Area",
+            "base_salary": 15000,
+            "advance": 3000,
+            "attendance": "Present",
+            "doc_type": "PAN Card",
+            "doc_data": ""
+        }
+    ],
+    "expenses": [
+        {
+            "id": 1,
+            "category": "Electricity Bill",
+            "amount": 4500,
+            "date": "2026-09-01"
+        }
+    ]
+}
