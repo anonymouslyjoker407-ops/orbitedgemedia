@@ -2,6 +2,7 @@ import os
 from flask import Flask, render_template_string, redirect, url_for, request, flash
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from script_1 import script1_bp
+from script_2 import script2_bp
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'orbitage-secret-key-2026')
@@ -158,6 +159,7 @@ def logout():
 
 # Registering Script 1 Blueprint
 app.register_blueprint(script1_bp)
+app.register_blueprint(script2_bp)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
