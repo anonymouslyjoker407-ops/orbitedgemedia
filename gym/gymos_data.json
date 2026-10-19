@@ -1,21 +1,7 @@
 {
     "members": [],
     "leads": [],
-    "staff": [
-        {
-            "id": 1,
-            "name": "Amit",
-            "role": "Trainer",
-            "phone": "9876543210",
-            "email": "amit@gym.com",
-            "address": "Main Street, Gym Area",
-            "base_salary": 15000,
-            "advance": 3000,
-            "attendance": "Present",
-            "doc_type": "PAN Card",
-            "doc_data": ""
-        }
-    ],
+    "staff": [],
     "expenses": [
         {
             "id": 1,
