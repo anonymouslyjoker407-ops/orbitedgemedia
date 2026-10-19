@@ -9,7 +9,7 @@ from flask_login import login_required
 script1_bp = Blueprint('script1', __name__, url_prefix='/script1')
 
 GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN', '')
-GITHUB_REPO = os.environ.get('GITHUB_REPO', '') # e.g. 'username/repo-name'
+GITHUB_REPO = os.environ.get('GITHUB_REPO', '')
 DATA_DIR = 'school_data'
 
 def github_api_request(method, path, payload=None):
@@ -18,20 +18,23 @@ def github_api_request(method, path, payload=None):
         "Authorization": f"Bearer {GITHUB_TOKEN}",
         "Accept": "application/vnd.github+json"
     }
-    if method == 'GET':
-        res = requests.get(url, headers=headers)
-        if res.status_code == 200:
-            data = res.json()
-            content = base64.b64decode(data['content']).decode('utf-8')
-            return json.loads(content), data['sha']
-        return None, None
-    elif method == 'PUT':
-        res = requests.put(url, headers=headers, json=payload)
-        return res.status_code in [200, 201]
-    elif method == 'DELETE':
-        res = requests.delete(url, headers=headers, json=payload)
-        return res.status_code == 200
-    return False
+    try:
+        if method == 'GET':
+            res = requests.get(url, headers=headers)
+            if res.status_code == 200:
+                data = res.json()
+                content = base64.b64decode(data['content']).decode('utf-8')
+                return json.loads(content), data['sha']
+            return None, None
+        elif method == 'PUT':
+            res = requests.put(url, headers=headers, json=payload)
+            return res.status_code in [200, 201]
+        elif method == 'DELETE':
+            res = requests.delete(url, headers=headers, json=payload)
+            return res.status_code == 200
+    except Exception as e:
+        print(f"GitHub API Error: {e}")
+    return False if method != 'GET' else (None, None)
 
 def load_json_from_github(filename):
     data, _ = github_api_request('GET', f"{DATA_DIR}/{filename}")
@@ -58,7 +61,6 @@ def upload_file_to_github(class_name, file_obj, prefix):
     ext = file_obj.filename.rsplit('.', 1)[1].lower() if '.' in file_obj.filename else ''
     filename = f"{prefix}_{int(datetime.now().timestamp())}.{ext}"
     
-    # Systematic subfolder based on Class name inside GitHub repo
     safe_class = class_name.strip().replace(" ", "_").lower()
     path = f"{DATA_DIR}/classes/{safe_class}/uploads/{filename}"
     
@@ -343,8 +345,13 @@ def add_student():
     }
     
     students.append(new_student)
-    save_json_to_github('students.json', students, f"Add student {roll_no}")
-    flash('Student registered securely in GitHub repo folders!', 'success')
+    success = save_json_to_github('students.json', students, f"Add student {roll_no}")
+    
+    if success:
+        flash('Student registered securely in GitHub repo folders!', 'success')
+    else:
+        flash('Error: Failed to save data to GitHub! Check your GITHUB_TOKEN & GITHUB_REPO settings on Render.', 'error')
+        
     return redirect(url_for('script1.index', tab='students'))
 
 @script1_bp.route('/delete/<int:student_id>')
@@ -373,8 +380,11 @@ def mark_attendance():
             "status": status
         })
         
-    save_json_to_github('attendance.json', attendance, f"Update attendance for {att_date}")
-    flash('Attendance saved to GitHub!', 'success')
+    success = save_json_to_github('attendance.json', attendance, f"Update attendance for {att_date}")
+    if success:
+        flash('Attendance saved to GitHub!', 'success')
+    else:
+        flash('Error: Failed to save attendance to GitHub.', 'error')
     return redirect(url_for('script1.index', tab='attendance'))
 
 @script1_bp.route('/fee', methods=['POST'])
@@ -397,6 +407,9 @@ def collect_fee():
     }
     
     fees.append(new_fee)
-    save_json_to_github('fees.json', fees, f"Record fee for {student_name}")
-    flash('Fee recorded to GitHub!', 'success')
+    success = save_json_to_github('fees.json', fees, f"Record fee for {student_name}")
+    if success:
+        flash('Fee recorded to GitHub!', 'success')
+    else:
+        flash('Error: Failed to record fee to GitHub.', 'error')
     return redirect(url_for('script1.index', tab='fees'))
