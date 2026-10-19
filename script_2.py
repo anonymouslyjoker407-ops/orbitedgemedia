@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template_string, request, redirect, url_for
+from flask import Blueprint, render_template_string, request, redirect, url_for, session
 import json
 import os
 import base64
@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 # Blueprint for Script 2 (Gym Management Tool)
 script2_bp = Blueprint('script2', __name__, url_prefix='/script2')
 
-# GitHub API Configurations
+# GitHub API Configurations for "gym" folder
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
 GITHUB_REPO = os.environ.get("GITHUB_REPO")
 GITHUB_BRANCH = os.environ.get("GITHUB_BRANCH", "main")
@@ -134,8 +134,38 @@ def save_data(data):
 
     requests.put(url, headers=headers, json=payload)
 
+@script2_bp.route("/login", methods=["GET", "POST"])
+def login():
+    error = None
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+        
+        if username == "admin" and password == "admin123":
+            session["gym_user"] = username
+            session["gym_role"] = "admin"
+            return redirect(url_for("script2.index"))
+        elif username == "staff" and password == "staff123":
+            session["gym_user"] = username
+            session["gym_role"] = "employee"
+            return redirect(url_for("script2.index", action="members"))
+        else:
+            error = "Invalid credentials! Use admin/admin123 or staff/staff123"
+            
+    return render_template_string(LOGIN_HTML, error=error)
+
+@script2_bp.route("/logout")
+def logout():
+    session.pop("gym_user", None)
+    session.pop("gym_role", None)
+    return redirect(url_for("script2.login"))
+
 @script2_bp.route("/", methods=["GET", "POST"])
 def index():
+    if "gym_user" not in session:
+        return redirect(url_for("script2.login"))
+    
+    role = session.get("gym_role", "employee")
     data = load_data()
     
     data.setdefault("members", [])
@@ -143,7 +173,11 @@ def index():
     data.setdefault("staff", [])
     data.setdefault("expenses", [])
 
-    action = request.args.get("action", "dashboard")
+    default_action = "members" if role == "employee" else "dashboard"
+    action = request.args.get("action", default_action)
+    
+    if role == "employee" and action in ["dashboard", "staff", "expenses"]:
+        action = "members"
 
     if request.method == "POST":
         form_type = request.form.get("form_type")
@@ -233,75 +267,84 @@ def index():
             save_data(data)
             return redirect(url_for("script2.index", action="leads"))
 
-        elif form_type == "add_staff":
-            doc_file = request.files.get("doc_file")
-            doc_data_b64 = ""
-            if doc_file and doc_file.filename != "":
-                file_bytes = doc_file.read()
-                encoded = base64.b64encode(file_bytes).decode("utf-8")
-                mime = doc_file.content_type or "application/pdf"
-                doc_data_b64 = f"data:{mime};base64,{encoded}"
-
-            new_staff = {
-                "id": max([s["id"] for s in data["staff"]], default=0) + 1,
-                "name": request.form.get("name"),
-                "role": request.form.get("role", "Trainer"),
-                "phone": request.form.get("phone"),
-                "email": request.form.get("email"),
-                "address": request.form.get("address"),
-                "base_salary": int(request.form.get("base_salary", 0)),
-                "advance": int(request.form.get("advance", 0)),
-                "attendance": request.form.get("attendance", "Present"),
-                "doc_type": request.form.get("doc_type", "PAN Card"),
-                "doc_data": doc_data_b64
-            }
-            data["staff"].append(new_staff)
-            save_data(data)
-            return redirect(url_for("script2.index", action="staff"))
-
-        elif form_type == "edit_staff":
+        elif form_type == "staff_self_attendance" and role == "employee":
             s_id = int(request.form.get("staff_id"))
             for s in data["staff"]:
                 if s["id"] == s_id:
-                    s["name"] = request.form.get("name")
-                    s["role"] = request.form.get("role", "Trainer")
-                    s["phone"] = request.form.get("phone")
-                    s["email"] = request.form.get("email")
-                    s["address"] = request.form.get("address")
-                    s["base_salary"] = int(request.form.get("base_salary", 0))
-                    s["advance"] = int(request.form.get("advance", 0))
                     s["attendance"] = request.form.get("attendance")
-                    s["doc_type"] = request.form.get("doc_type", s.get("doc_type", "PAN Card"))
-                    
-                    doc_file = request.files.get("doc_file")
-                    if doc_file and doc_file.filename != "":
-                        file_bytes = doc_file.read()
-                        encoded = base64.b64encode(file_bytes).decode("utf-8")
-                        mime = doc_file.content_type or "application/pdf"
-                        s["doc_data"] = f"data:{mime};base64,{encoded}"
             save_data(data)
-            return redirect(url_for("script2.index", action="staff"))
+            return redirect(url_for("script2.index", action="my_profile"))
 
-        elif form_type == "add_expense":
-            new_exp = {
-                "id": max([e["id"] for e in data["expenses"]], default=0) + 1,
-                "category": request.form.get("category"),
-                "amount": int(request.form.get("amount", 0)),
-                "date": request.form.get("date")
-            }
-            data["expenses"].append(new_exp)
-            save_data(data)
-            return redirect(url_for("script2.index", action="expenses"))
+        elif role == "admin":
+            if form_type == "add_staff":
+                doc_file = request.files.get("doc_file")
+                doc_data_b64 = ""
+                if doc_file and doc_file.filename != "":
+                    file_bytes = doc_file.read()
+                    encoded = base64.b64encode(file_bytes).decode("utf-8")
+                    mime = doc_file.content_type or "application/pdf"
+                    doc_data_b64 = f"data:{mime};base64,{encoded}"
 
-        elif form_type == "edit_expense":
-            e_id = int(request.form.get("expense_id"))
-            for e in data["expenses"]:
-                if e["id"] == e_id:
-                    e["category"] = request.form.get("category")
-                    e["amount"] = int(request.form.get("amount", 0))
-                    e["date"] = request.form.get("date")
-            save_data(data)
-            return redirect(url_for("script2.index", action="expenses"))
+                new_staff = {
+                    "id": max([s["id"] for s in data["staff"]], default=0) + 1,
+                    "name": request.form.get("name"),
+                    "role": request.form.get("role", "Trainer"),
+                    "phone": request.form.get("phone"),
+                    "email": request.form.get("email"),
+                    "address": request.form.get("address"),
+                    "base_salary": int(request.form.get("base_salary", 0)),
+                    "advance": int(request.form.get("advance", 0)),
+                    "attendance": request.form.get("attendance", "Present"),
+                    "doc_type": request.form.get("doc_type", "PAN Card"),
+                    "doc_data": doc_data_b64
+                }
+                data["staff"].append(new_staff)
+                save_data(data)
+                return redirect(url_for("script2.index", action="staff"))
+
+            elif form_type == "edit_staff":
+                s_id = int(request.form.get("staff_id"))
+                for s in data["staff"]:
+                    if s["id"] == s_id:
+                        s["name"] = request.form.get("name")
+                        s["role"] = request.form.get("role", "Trainer")
+                        s["phone"] = request.form.get("phone")
+                        s["email"] = request.form.get("email")
+                        s["address"] = request.form.get("address")
+                        s["base_salary"] = int(request.form.get("base_salary", 0))
+                        s["advance"] = int(request.form.get("advance", 0))
+                        s["attendance"] = request.form.get("attendance")
+                        s["doc_type"] = request.form.get("doc_type", s.get("doc_type", "PAN Card"))
+                        
+                        doc_file = request.files.get("doc_file")
+                        if doc_file and doc_file.filename != "":
+                            file_bytes = doc_file.read()
+                            encoded = base64.b64encode(file_bytes).decode("utf-8")
+                            mime = doc_file.content_type or "application/pdf"
+                            s["doc_data"] = f"data:{mime};base64,{encoded}"
+                save_data(data)
+                return redirect(url_for("script2.index", action="staff"))
+
+            elif form_type == "add_expense":
+                new_exp = {
+                    "id": max([e["id"] for e in data["expenses"]], default=0) + 1,
+                    "category": request.form.get("category"),
+                    "amount": int(request.form.get("amount", 0)),
+                    "date": request.form.get("date")
+                }
+                data["expenses"].append(new_exp)
+                save_data(data)
+                return redirect(url_for("script2.index", action="expenses"))
+
+            elif form_type == "edit_expense":
+                e_id = int(request.form.get("expense_id"))
+                for e in data["expenses"]:
+                    if e["id"] == e_id:
+                        e["category"] = request.form.get("category")
+                        e["amount"] = int(request.form.get("amount", 0))
+                        e["date"] = request.form.get("date")
+                save_data(data)
+                return redirect(url_for("script2.index", action="expenses"))
 
     total_revenue = sum(m.get("amount", 0) + m.get("pt_amount", 0) for m in data["members"])
     total_dues = sum(m.get("dues", 0) for m in data["members"])
@@ -322,6 +365,7 @@ def index():
         DASHBOARD_HTML, 
         data=data, 
         action=action, 
+        role=role,
         sources_status="GitHub 'gym' Folder Mode" if GITHUB_TOKEN else "Local 'gym' Folder Mode",
         total_revenue=total_revenue,
         total_dues=total_dues,
@@ -335,6 +379,9 @@ def index():
 
 @script2_bp.route("/delete/<string:category>/<int:item_id>")
 def delete_item(category, item_id):
+    if "gym_user" not in session or session.get("gym_role") != "admin":
+        return redirect(url_for("script2.index", action="members"))
+
     data = load_data()
     data.setdefault("members", [])
     data.setdefault("leads", [])
@@ -356,6 +403,45 @@ def delete_item(category, item_id):
     
     save_data(data)
     return redirect(url_for("script2.index", action=redirect_action))
+
+LOGIN_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gym OEM - Login</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-white flex items-center justify-center h-screen px-4">
+    <div class="bg-gray-900 p-8 rounded-2xl shadow-2xl w-full max-w-md border border-gray-800">
+        <h2 class="text-3xl font-black text-center mb-2 text-emerald-400">💪 Gym OEM</h2>
+        <p class="text-xs text-gray-400 text-center mb-6">Complete Management System (Script 2)</p>
+        
+        {% if error %}
+            <div class="bg-red-500/20 border border-red-500 text-red-300 p-3 rounded-xl mb-4 text-xs text-center">{{ error }}</div>
+        {% endif %}
+        
+        <form method="POST" class="space-y-4">
+            <div>
+                <label class="block text-xs text-gray-400 mb-1">Username</label>
+                <input type="text" name="username" required placeholder="admin or staff" class="w-full px-4 py-2.5 bg-gray-800 rounded-xl border border-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-400 text-sm">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-400 mb-1">Password</label>
+                <input type="password" name="password" required placeholder="password" class="w-full px-4 py-2.5 bg-gray-800 rounded-xl border border-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-400 text-sm">
+            </div>
+            <button type="submit" class="w-full py-3 bg-emerald-500 hover:bg-emerald-600 transition rounded-xl font-bold text-gray-950 shadow-lg text-sm mt-2 cursor-pointer">Log In</button>
+        </form>
+
+        <div class="mt-6 p-4 bg-gray-800/50 rounded-xl border border-gray-800 text-xs space-y-1 text-gray-400">
+            <p><strong class="text-emerald-400">👑 Admin:</strong> admin / admin123</p>
+            <p><strong class="text-yellow-400">👔 Staff:</strong> staff / staff123</p>
+        </div>
+    </div>
+</body>
+</html>
+"""
 
 DASHBOARD_HTML = """
 <!DOCTYPE html>
@@ -392,38 +478,50 @@ DASHBOARD_HTML = """
     <div class="flex h-screen overflow-hidden">
         <div class="hidden md:flex flex-col w-64 bg-gray-900 border-r border-gray-800 p-6">
             <h1 class="text-xl font-black text-emerald-400 mb-1 tracking-wider">💪 Gym OEM</h1>
-            <p class="text-xs text-gray-400 mb-6 capitalize">Tool: <span class="text-emerald-400 font-bold">Script 2 (Gym)</span></p>
+            <p class="text-xs text-gray-400 mb-6 capitalize">Role: <span class="text-emerald-400 font-bold">{{ role }}</span></p>
             <div class="mb-6 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-[10px] text-emerald-400 font-mono text-center">
                 🟢 {{ sources_status }}
             </div>
             
             <nav class="space-y-2 flex-1">
-                <a href="/dashboard" class="block py-2.5 px-4 rounded-xl font-semibold text-gray-400 hover:bg-gray-800 transition">🏠 Main Dashboard</a>
+                {% if role == 'admin' %}
                 <a href="/script2/?action=dashboard" class="block py-2.5 px-4 rounded-xl font-semibold transition {% if action == 'dashboard' %}bg-emerald-500/10 text-emerald-400{% else %}text-gray-400 hover:bg-gray-800{% endif %}">📊 P&L Dashboard</a>
                 <a href="/script2/?action=leads" class="block py-2.5 px-4 rounded-xl font-semibold transition {% if action == 'leads' %}bg-emerald-500/10 text-emerald-400{% else %}text-gray-400 hover:bg-gray-800{% endif %}">🎯 Prospect & Leads</a>
                 <a href="/script2/?action=members" class="block py-2.5 px-4 rounded-xl font-semibold transition {% if action == 'members' %}bg-emerald-500/10 text-emerald-400{% else %}text-gray-400 hover:bg-gray-800{% endif %}">👥 Members & Lifecycle</a>
                 <a href="/script2/?action=staff" class="block py-2.5 px-4 rounded-xl font-semibold transition {% if action == 'staff' %}bg-emerald-500/10 text-emerald-400{% else %}text-gray-400 hover:bg-gray-800{% endif %}">👔 Staff Payroll & Attn</a>
                 <a href="/script2/?action=expenses" class="block py-2.5 px-4 rounded-xl font-semibold transition {% if action == 'expenses' %}bg-emerald-500/10 text-emerald-400{% else %}text-gray-400 hover:bg-gray-800{% endif %}">💡 Expenses Ledger</a>
+                {% else %}
+                <a href="/script2/?action=members" class="block py-2.5 px-4 rounded-xl font-semibold transition {% if action == 'members' %}bg-emerald-500/10 text-emerald-400{% else %}text-gray-400 hover:bg-gray-800{% endif %}">👥 Members Directory</a>
+                <a href="/script2/?action=leads" class="block py-2.5 px-4 rounded-xl font-semibold transition {% if action == 'leads' %}bg-emerald-500/10 text-emerald-400{% else %}text-gray-400 hover:bg-gray-800{% endif %}">🎯 Prospect & Leads</a>
+                <a href="/script2/?action=my_profile" class="block py-2.5 px-4 rounded-xl font-semibold transition {% if action == 'my_profile' %}bg-emerald-500/10 text-emerald-400{% else %}text-gray-400 hover:bg-gray-800{% endif %}">👤 Staff Portal & Attendance</a>
+                {% endif %}
+                <a href="/script2/logout" class="block py-2.5 px-4 rounded-xl font-semibold text-red-400 hover:bg-red-500/10 transition mt-8">🚪 Log Out</a>
             </nav>
         </div>
 
         <div class="flex-1 flex flex-col overflow-y-auto">
             <header class="bg-gray-900 border-b border-gray-800 p-4 flex justify-between items-center md:hidden">
-                <h1 class="text-sm font-black text-emerald-400">💪 Gym OEM (Script 2)</h1>
-                <a href="/dashboard" class="text-xs text-emerald-400 font-bold bg-emerald-500/10 px-3 py-1.5 rounded-lg">Home</a>
+                <h1 class="text-sm font-black text-emerald-400">💪 Gym OEM</h1>
+                <a href="/script2/logout" class="text-xs text-red-400 font-bold bg-red-500/10 px-3 py-1.5 rounded-lg">Log Out</a>
             </header>
 
             <div class="flex md:hidden bg-gray-900 p-2 overflow-x-auto space-x-2 border-b border-gray-800 shrink-0">
+                {% if role == 'admin' %}
                 <a href="/script2/?action=dashboard" class="px-3 py-1.5 text-xs font-semibold rounded-lg {% if action == 'dashboard' %}bg-emerald-500 text-gray-950{% else %}bg-gray-800 text-gray-300{% endif %} whitespace-nowrap">Dashboard</a>
                 <a href="/script2/?action=leads" class="px-3 py-1.5 text-xs font-semibold rounded-lg {% if action == 'leads' %}bg-emerald-500 text-gray-950{% else %}bg-gray-800 text-gray-300{% endif %} whitespace-nowrap">Leads</a>
                 <a href="/script2/?action=members" class="px-3 py-1.5 text-xs font-semibold rounded-lg {% if action == 'members' %}bg-emerald-500 text-gray-950{% else %}bg-gray-800 text-gray-300{% endif %} whitespace-nowrap">Members</a>
                 <a href="/script2/?action=staff" class="px-3 py-1.5 text-xs font-semibold rounded-lg {% if action == 'staff' %}bg-emerald-500 text-gray-950{% else %}bg-gray-800 text-gray-300{% endif %} whitespace-nowrap">Staff</a>
                 <a href="/script2/?action=expenses" class="px-3 py-1.5 text-xs font-semibold rounded-lg {% if action == 'expenses' %}bg-emerald-500 text-gray-950{% else %}bg-gray-800 text-gray-300{% endif %} whitespace-nowrap">Expenses</a>
+                {% else %}
+                <a href="/script2/?action=members" class="px-3 py-1.5 text-xs font-semibold rounded-lg {% if action == 'members' %}bg-emerald-500 text-gray-950{% else %}bg-gray-800 text-gray-300{% endif %} whitespace-nowrap">Members</a>
+                <a href="/script2/?action=leads" class="px-3 py-1.5 text-xs font-semibold rounded-lg {% if action == 'leads' %}bg-emerald-500 text-gray-950{% else %}bg-gray-800 text-gray-300{% endif %} whitespace-nowrap">Leads</a>
+                <a href="/script2/?action=my_profile" class="px-3 py-1.5 text-xs font-semibold rounded-lg {% if action == 'my_profile' %}bg-emerald-500 text-gray-950{% else %}bg-gray-800 text-gray-300{% endif %} whitespace-nowrap">Staff Portal</a>
+                {% endif %}
             </div>
 
             <div class="p-4 sm:p-6 max-w-7xl mx-auto w-full space-y-6">
                 
-                {% if action == 'dashboard' %}
+                {% if action == 'dashboard' and role == 'admin' %}
                 <div class="space-y-6">
                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-gray-900 p-6 rounded-2xl border border-gray-800 shadow-xl">
                         <div>
@@ -525,7 +623,7 @@ DASHBOARD_HTML = """
                                 <input type="date" name="follow_up_date" required class="w-full mt-1 p-2.5 bg-gray-800 rounded-xl border border-gray-700 text-sm">
                             </div>
                             <div class="sm:col-span-3">
-                                <button type="submit" class="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 font-bold text-gray-950 rounded-xl transition text-sm shadow-lg">Save Lead</button>
+                                <button type="submit" class="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 font-bold text-gray-950 rounded-xl transition text-sm shadow-lg cursor-pointer">Save Lead</button>
                             </div>
                         </form>
                     </div>
@@ -570,7 +668,9 @@ DASHBOARD_HTML = """
                                         </td>
                                         <td class="p-3 text-center space-x-1 no-print">
                                             <button type="button" onclick='openEditModal("lead", {{ l|tojson|safe }})' class="text-blue-400 bg-blue-500/10 px-2.5 py-1 rounded text-xs font-bold cursor-pointer">Edit</button>
+                                            {% if role == 'admin' %}
                                             <a href="/script2/delete/lead/{{ l.id }}" onclick="return confirm('Confirm delete lead?');" class="text-red-400 bg-red-500/10 px-2.5 py-1 rounded text-xs font-bold">Delete</a>
+                                            {% endif %}
                                         </td>
                                     </tr>
                                     {% endfor %}
@@ -650,7 +750,7 @@ DASHBOARD_HTML = """
                                 <input type="date" name="end_date" id="add_end_date" required class="w-full mt-1 p-2.5 bg-gray-800 rounded-xl border border-gray-700 text-sm">
                             </div>
                             <div class="sm:col-span-3">
-                                <button type="submit" class="w-full py-3 bg-emerald-500 hover:bg-emerald-600 font-bold text-gray-950 rounded-xl transition text-sm shadow-lg">Save Member Record</button>
+                                <button type="submit" class="w-full py-3 bg-emerald-500 hover:bg-emerald-600 font-bold text-gray-950 rounded-xl transition text-sm shadow-lg cursor-pointer">Save Member Record</button>
                             </div>
                         </form>
                     </div>
@@ -684,7 +784,7 @@ DASHBOARD_HTML = """
                                 <input type="text" name="new_holder_phone" placeholder="Optional" class="w-full mt-1 p-2.5 bg-gray-800 rounded-xl border border-gray-700 text-sm">
                             </div>
                             <div class="sm:col-span-4">
-                                <button type="submit" class="w-full py-2.5 bg-blue-500 hover:bg-blue-600 font-bold text-gray-950 rounded-xl transition text-sm shadow-lg">Apply Lifecycle Update</button>
+                                <button type="submit" class="w-full py-2.5 bg-blue-500 hover:bg-blue-600 font-bold text-gray-950 rounded-xl transition text-sm shadow-lg cursor-pointer">Apply Lifecycle Update</button>
                             </div>
                         </form>
                     </div>
@@ -744,7 +844,9 @@ DASHBOARD_HTML = """
                                         <td class="p-3 text-center space-x-1 no-print">
                                             <button type="button" onclick='openInvoiceModal({{ m|tojson|safe }})' class="text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded text-xs font-bold cursor-pointer">Invoice</button>
                                             <button type="button" onclick='openEditModal("member", {{ m|tojson|safe }})' class="text-blue-400 bg-blue-500/10 px-2 py-1 rounded text-xs font-bold cursor-pointer">Edit</button>
+                                            {% if role == 'admin' %}
                                             <a href="/script2/delete/member/{{ m.id }}" onclick="return confirm('Confirm delete member?');" class="text-red-400 bg-red-500/10 px-2 py-1 rounded text-xs font-bold">Delete</a>
+                                            {% endif %}
                                         </td>
                                     </tr>
                                     {% endfor %}
@@ -754,7 +856,63 @@ DASHBOARD_HTML = """
                     </div>
                 </div>
 
-                {% elif action == 'staff' %}
+                {% elif action == 'my_profile' and role == 'employee' %}
+                <div class="space-y-6">
+                    <div class="bg-gray-900 p-6 rounded-2xl border border-gray-800 shadow-xl">
+                        <h2 class="text-xl font-bold text-yellow-400 mb-2">👤 Staff Self-Service Portal</h2>
+                        <p class="text-xs text-gray-400 mb-6">View your designated salary structure, uploaded documents, and update your daily attendance status.</p>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {% for s in data.staff %}
+                            {% if loop.first %}
+                            <div class="bg-gray-800/50 p-6 rounded-2xl border border-gray-700/50 space-y-4">
+                                <div class="flex justify-between items-center">
+                                    <h3 class="text-lg font-bold text-white">{{ s.name }}</h3>
+                                    <span class="text-xs font-semibold px-3 py-1 bg-yellow-500/10 text-yellow-400 rounded-full">{{ s.role }}</span>
+                                </div>
+                                <div class="space-y-2 text-sm text-gray-300">
+                                    <p>📱 <strong>Phone:</strong> {{ s.phone }}</p>
+                                    <p>📧 <strong>Email:</strong> {{ s.email or 'N/A' }}</p>
+                                    <p>🏠 <strong>Address:</strong> {{ s.address }}</p>
+                                    <p>💰 <strong>Base Salary:</strong> <span class="text-emerald-400 font-bold">₹{{ s.base_salary }}</span></p>
+                                    <p>🔻 <strong>Advance Taken:</strong> <span class="text-red-400 font-bold">₹{{ s.advance }}</span></p>
+                                    <p>🟢 <strong>Current Attendance:</strong> <span class="text-yellow-400 font-bold">{{ s.attendance }}</span></p>
+                                </div>
+                                <div class="pt-4 border-t border-gray-700">
+                                    <p class="text-xs text-gray-400 mb-2">Submitted ID Proof: <strong class="text-blue-400">{{ s.doc_type }}</strong></p>
+                                    {% if s.doc_data %}
+                                    <button type="button" onclick="openDocModal('{{ s.doc_data }}', '{{ s.name }} - {{ s.doc_type }}')" class="text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-xl font-bold text-xs hover:bg-emerald-500/20 cursor-pointer inline-block">👁️ View Uploaded Document</button>
+                                    {% else %}
+                                    <span class="text-gray-500 text-xs italic">No document uploaded yet</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <div class="bg-gray-800/50 p-6 rounded-2xl border border-gray-700/50 flex flex-col justify-between">
+                                <div>
+                                    <h3 class="text-lg font-bold text-emerald-400 mb-2">⏰ Mark Daily Attendance</h3>
+                                    <p class="text-xs text-gray-400 mb-4">Let management know your availability for today.</p>
+                                </div>
+                                <form method="POST" class="space-y-4">
+                                    <input type="hidden" name="form_type" value="staff_self_attendance">
+                                    <input type="hidden" name="staff_id" value="{{ s.id }}">
+                                    <div>
+                                        <label class="text-xs text-gray-400">Select Status</label>
+                                        <select name="attendance" class="w-full mt-1 p-3 bg-gray-900 rounded-xl border border-gray-700 text-sm text-white">
+                                            <option value="Present" {% if s.attendance == 'Present' %}selected{% endif %}>Present / Active</option>
+                                            <option value="On Leave" {% if s.attendance == 'On Leave' %}selected{% endif %}>On Leave</option>
+                                        </select>
+                                    </div>
+                                    <button type="submit" class="w-full py-3 bg-yellow-500 hover:bg-yellow-600 font-bold text-gray-950 rounded-xl transition text-sm shadow-lg cursor-pointer">Update My Attendance</button>
+                                </form>
+                            </div>
+                            {% endif %}
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+
+                {% elif action == 'staff' and role == 'admin' %}
                 <div class="space-y-6">
                     <div class="bg-gray-900 p-6 rounded-2xl border border-gray-800 shadow-xl">
                         <h2 class="text-xl font-bold text-yellow-400 mb-4">👔 Add Staff & Trainers (Roles, ID Proofs & Document Upload)</h2>
@@ -815,7 +973,7 @@ DASHBOARD_HTML = """
                                 <input type="file" name="doc_file" accept=".png, .jpg, .jpeg, .pdf" class="w-full mt-1 p-2 bg-gray-800 rounded-xl border border-gray-700 text-xs text-gray-300 file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-yellow-500 file:text-gray-950 hover:file:bg-yellow-600">
                             </div>
                             <div class="sm:col-span-3">
-                                <button type="submit" class="w-full py-3 bg-yellow-500 hover:bg-yellow-600 font-bold text-gray-950 rounded-xl transition text-sm shadow-lg">Save Staff & Upload Document</button>
+                                <button type="submit" class="w-full py-3 bg-yellow-500 hover:bg-yellow-600 font-bold text-gray-950 rounded-xl transition text-sm shadow-lg cursor-pointer">Save Staff & Upload Document</button>
                             </div>
                         </form>
                     </div>
@@ -887,7 +1045,7 @@ DASHBOARD_HTML = """
                     </div>
                 </div>
 
-                {% elif action == 'expenses' %}
+                {% elif action == 'expenses' and role == 'admin' %}
                 <div class="space-y-6">
                     <div class="bg-gray-900 p-6 rounded-2xl border border-gray-800 shadow-xl">
                         <h2 class="text-xl font-bold text-red-400 mb-4">💡 Utilities & Gym Expenses Ledger</h2>
@@ -906,7 +1064,7 @@ DASHBOARD_HTML = """
                                 <input type="date" name="date" required class="w-full mt-1 p-2.5 bg-gray-800 rounded-xl border border-gray-700 text-sm">
                             </div>
                             <div class="sm:col-span-3">
-                                <button type="submit" class="w-full py-3 bg-red-500 hover:bg-red-600 font-bold text-gray-950 rounded-xl transition text-sm shadow-lg">Save Expense</button>
+                                <button type="submit" class="w-full py-3 bg-red-500 hover:bg-red-600 font-bold text-gray-950 rounded-xl transition text-sm shadow-lg cursor-pointer">Save Expense</button>
                             </div>
                         </form>
                     </div>
@@ -1271,6 +1429,7 @@ DASHBOARD_HTML = """
         }
     </script>
 
+    {% if action == 'dashboard' and role == 'admin' %}
     <script>
         const ctx = document.getElementById('planChart').getContext('2d');
         new Chart(ctx, {
@@ -1292,6 +1451,7 @@ DASHBOARD_HTML = """
             }
         });
     </script>
+    {% endif %}
 </body>
 </html>
 """
