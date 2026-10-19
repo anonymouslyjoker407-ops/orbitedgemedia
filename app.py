@@ -126,6 +126,8 @@ DASHBOARD_TEMPLATE = """
                         </div>
                     </div>
                     <button class="btn btn-secondary mt-auto w-100" disabled><i class="fas fa-lock me-1"></i> Coming Soon</button>
+
+                    <a href="/script2/" class="btn-custom">Launch Script 2 (Gym Management)</a>
                 </div>
             </div>
         </div>
