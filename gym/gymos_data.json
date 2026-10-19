@@ -17,17 +17,7 @@
             "end_date": "2027-01-01"
         }
     ],
-    "leads": [
-        {
-            "id": 1,
-            "name": "Vikas Verma",
-            "phone": "9123456789",
-            "email": "vikas@example.com",
-            "source": "Instagram Ad",
-            "status": "Trial (3-Day)",
-            "follow_up_date": "2026-09-10"
-        }
-    ],
+    "leads": [],
     "staff": [
         {
             "id": 1,
