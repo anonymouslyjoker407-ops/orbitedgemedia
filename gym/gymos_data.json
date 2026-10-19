@@ -17,17 +17,7 @@
             "end_date": "2027-01-01"
         }
     ],
-    "leads": [
-        {
-            "id": 1,
-            "name": "Vikaram Singh",
-            "phone": "9874561230",
-            "email": "anonymouslyjoker407@gmail.com",
-            "source": "Walk-In",
-            "status": "Trial (3-Day)",
-            "follow_up_date": "2026-03-02"
-        }
-    ],
+    "leads": [],
     "staff": [],
     "expenses": []
 }
